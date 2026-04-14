@@ -30,6 +30,10 @@ function getDateRange(period: string): { range: DateRange; label: string } {
       const start = new Date(now.getFullYear(), now.getMonth(), 1)
       return { range: { start, end }, label: `${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()}` }
     }
+    case '30days': {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+      return { range: { start, end }, label: 'Last 30 Days' }
+    }
     case 'all': {
       return { range: { start: new Date(0), end }, label: 'All Time' }
     }
@@ -40,9 +44,10 @@ function getDateRange(period: string): { range: DateRange; label: string } {
   }
 }
 
-function toPeriod(s: string): 'today' | 'week' | 'month' {
+function toPeriod(s: string): 'today' | 'week' | 'month' | '30days' {
   if (s === 'today') return 'today'
   if (s === 'month') return 'month'
+  if (s === '30days') return '30days'
   return 'week'
 }
 
@@ -54,7 +59,7 @@ const program = new Command()
 program
   .command('report', { isDefault: true })
   .description('Interactive usage dashboard')
-  .option('-p, --period <period>', 'Starting period: today, week, month', 'week')
+  .option('-p, --period <period>', 'Starting period: today, week, month, 30days', 'week')
   .option('--provider <provider>', 'Filter by provider: all, claude, codex', 'all')
   .action(async (opts) => {
     await renderDashboard(toPeriod(opts.period), opts.provider)
@@ -161,7 +166,7 @@ program
     const periods: PeriodExport[] = [
       { label: 'Today', projects: await parseAllSessions(getDateRange('today').range, pf) },
       { label: '7 Days', projects: await parseAllSessions(getDateRange('week').range, pf) },
-      { label: '30 Days', projects: await parseAllSessions(getDateRange('month').range, pf) },
+      { label: '30 Days', projects: await parseAllSessions(getDateRange('30days').range, pf) },
     ]
 
     if (periods.every(p => p.projects.length === 0)) {

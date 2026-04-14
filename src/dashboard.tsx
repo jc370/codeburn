@@ -6,12 +6,13 @@ import { parseAllSessions } from './parser.js'
 import { loadPricing } from './models.js'
 import { providers } from './providers/index.js'
 
-type Period = 'today' | 'week' | 'month'
+type Period = 'today' | 'week' | 'month' | '30days'
 
-const PERIODS: Period[] = ['today', 'week', 'month']
+const PERIODS: Period[] = ['today', 'week', '30days', 'month']
 const PERIOD_LABELS: Record<Period, string> = {
   today: 'Today',
   week: '7 Days',
+  '30days': '30 Days',
   month: 'This Month',
 }
 
@@ -75,6 +76,7 @@ function getDateRange(period: Period): { start: Date; end: Date } {
   switch (period) {
     case 'today': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), end }
     case 'week': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7), end }
+    case '30days': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30), end }
     case 'month': return { start: new Date(now.getFullYear(), now.getMonth(), 1), end }
   }
 }
@@ -407,6 +409,8 @@ function StatusBar({ width, showProvider }: { width: number; showProvider?: bool
         <Text color={ORANGE} bold>2</Text>
         <Text dimColor> week   </Text>
         <Text color={ORANGE} bold>3</Text>
+        <Text dimColor> 30 days   </Text>
+        <Text color={ORANGE} bold>4</Text>
         <Text dimColor> month</Text>
         {showProvider && (
           <>
@@ -443,7 +447,7 @@ function DashboardContent({ projects, period }: { projects: ProjectSummary[]; pe
       <Overview projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} />
 
       <Row wide={wide} width={dashWidth}>
-        <DailyActivity projects={projects} days={period === 'month' ? 31 : 14} pw={pw} bw={barWidth} />
+        <DailyActivity projects={projects} days={period === 'month' || period === '30days' ? 31 : 14} pw={pw} bw={barWidth} />
         <ProjectBreakdown projects={projects} pw={pw} bw={barWidth} />
       </Row>
 
@@ -532,7 +536,8 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider 
       switchPeriod(PERIODS[(idx + 1) % PERIODS.length])
     } else if (input === '1') switchPeriod('today')
     else if (input === '2') switchPeriod('week')
-    else if (input === '3') switchPeriod('month')
+    else if (input === '3') switchPeriod('30days')
+    else if (input === '4') switchPeriod('month')
   })
 
   if (loading) {
@@ -566,7 +571,7 @@ function StaticDashboard({ projects, period }: { projects: ProjectSummary[]; per
   )
 }
 
-export async function renderDashboard(period: Period = 'week', provider: string = 'all'): Promise<void> {
+export async function renderDashboard(period: 'today' | 'week' | 'month' | '30days' = 'week', provider: string = 'all'): Promise<void> {
   await loadPricing()
   const range = getDateRange(period)
   const projects = await parseAllSessions(range, provider)
