@@ -44,7 +44,7 @@ function getDateRange(period: string): { range: DateRange; label: string } {
   }
 }
 
-function toPeriod(s: string): 'today' | 'week' | 'month' | '30days' {
+function toPeriod(s: string): 'today' | 'week' | '30days' | 'month' {
   if (s === 'today') return 'today'
   if (s === 'month') return 'month'
   if (s === '30days') return '30days'

@@ -571,7 +571,7 @@ function StaticDashboard({ projects, period }: { projects: ProjectSummary[]; per
   )
 }
 
-export async function renderDashboard(period: 'today' | 'week' | 'month' | '30days' = 'week', provider: string = 'all'): Promise<void> {
+export async function renderDashboard(period: Period = 'week', provider: string = 'all'): Promise<void> {
   await loadPricing()
   const range = getDateRange(period)
   const projects = await parseAllSessions(range, provider)
