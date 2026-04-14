@@ -15,8 +15,8 @@ import type {
   TokenUsage,
   ToolUseBlock,
 } from './types.js'
-import { classifyTurn } from './classifier.js'
-import { extractBashCommands, isBashTool } from './bash-utils.js'
+import { classifyTurn, BASH_TOOLS } from './classifier.js'
+import { extractBashCommands } from './bash-utils.js'
 
 function getClaudeDir(): string {
   return process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude')
@@ -86,7 +86,7 @@ function extractCoreTools(tools: string[]): string[] {
 
 function extractBashCommandsFromContent(content: ContentBlock[]): string[] {
   return content
-    .filter((b): b is ToolUseBlock => b.type === 'tool_use' && isBashTool((b as ToolUseBlock).name))
+    .filter((b): b is ToolUseBlock => b.type === 'tool_use' && BASH_TOOLS.has((b as ToolUseBlock).name))
     .flatMap(b => {
       const command = (b.input as Record<string, unknown>)?.command
       return typeof command === 'string' ? extractBashCommands(command) : []

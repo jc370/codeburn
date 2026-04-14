@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { extractBashCommands, isBashTool } from '../src/bash-utils.js'
+import { extractBashCommands } from '../src/bash-utils.js'
+import { BASH_TOOLS } from '../src/classifier.js'
 
 describe('extractBashCommands', () => {
   it('extracts single command', () => {
@@ -59,8 +60,8 @@ describe('extractBashCommands', () => {
   })
 })
 
-describe('isBashTool', () => {
-  it('recognizes Bash', () => { expect(isBashTool('Bash')).toBe(true) })
-  it('recognizes BashTool', () => { expect(isBashTool('BashTool')).toBe(true) })
-  it('rejects unknown tools', () => { expect(isBashTool('Read')).toBe(false) })
+describe('BASH_TOOLS', () => {
+  it('recognizes Bash', () => { expect(BASH_TOOLS.has('Bash')).toBe(true) })
+  it('recognizes BashTool', () => { expect(BASH_TOOLS.has('BashTool')).toBe(true) })
+  it('rejects unknown tools', () => { expect(BASH_TOOLS.has('Read')).toBe(false) })
 })

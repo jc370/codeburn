@@ -13,7 +13,7 @@ const RESEARCH_KEYWORDS = /\b(research|investigate|look\s+into|find\s+out|check|
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'FileEditTool', 'FileWriteTool', 'NotebookEdit'])
 const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'FileReadTool', 'GrepTool', 'GlobTool'])
-const BASH_TOOLS = new Set(['Bash', 'BashTool', 'PowerShellTool'])
+export const BASH_TOOLS = new Set(['Bash', 'BashTool', 'PowerShellTool'])
 const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TodoWrite'])
 const SEARCH_TOOLS = new Set(['WebSearch', 'WebFetch', 'ToolSearch'])
 
