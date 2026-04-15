@@ -112,6 +112,17 @@ describe('codex provider - session discovery', () => {
     expect(sessions).toEqual([])
   })
 
+  it('accepts case-insensitive originator (Codex Desktop)', async () => {
+    await writeSession(tmpDir, '2026-04-14', 'rollout-desktop.jsonl', [
+      sessionMeta({ originator: 'Codex Desktop' }),
+      tokenCount({ last: { input: 100, output: 50 }, total: { total: 150 } }),
+    ])
+
+    const provider = createCodexProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    expect(sessions).toHaveLength(1)
+  })
+
   it('skips files without codex session_meta', async () => {
     const [year, month, day] = '2026-04-14'.split('-')
     const sessionDir = join(tmpDir, 'sessions', year!, month!, day!)

@@ -80,7 +80,7 @@ async function isValidCodexSession(filePath: string): Promise<{ valid: boolean; 
   if (!entry) return { valid: false }
   const valid = entry.type === 'session_meta' &&
     typeof entry.payload?.originator === 'string' &&
-    entry.payload.originator.startsWith('codex')
+    entry.payload.originator.toLowerCase().startsWith('codex')
   return { valid, meta: valid ? entry : undefined }
 }
 
