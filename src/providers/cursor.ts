@@ -237,7 +237,10 @@ export function createCursorProvider(dbPathOverride?: string): Provider {
         markdown: 'Markdown',
         sql: 'SQL',
         shell: 'Shell',
+        shellscript: 'Shell Script',
         bash: 'Bash',
+        typescriptreact: 'TSX',
+        javascriptreact: 'JSX',
         dockerfile: 'Dockerfile',
         toml: 'TOML',
       }
