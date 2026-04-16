@@ -68,7 +68,7 @@ program.hook('preAction', async () => {
   await loadCurrency()
 })
 
-function buildJsonReport(projects: ProjectSummary[], period: string) {
+function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: string) {
   const sessions = projects.flatMap(p => p.sessions)
   const { code } = getCurrency()
 
@@ -163,10 +163,16 @@ function buildJsonReport(projects: ProjectSummary[], period: string) {
   const sortedMap = (m: Record<string, number>) =>
     Object.entries(m).sort(([, a], [, b]) => b - a).map(([name, calls]) => ({ name, calls }))
 
+  const topSessions = projects
+    .flatMap(p => p.sessions.map(s => ({ project: p.project, sessionId: s.sessionId, date: s.firstTimestamp?.slice(0, 10) ?? null, cost: convertCost(s.totalCostUSD), calls: s.apiCalls })))
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, 5)
+
   return {
     generated: new Date().toISOString(),
     currency: code,
     period,
+    periodKey,
     overview: {
       cost: convertCost(totalCostUSD),
       calls: totalCalls,
@@ -186,6 +192,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string) {
     tools: sortedMap(toolMap),
     mcpServers: sortedMap(mcpMap),
     shellCommands: sortedMap(bashMap),
+    topSessions,
   }
 }
 
@@ -202,7 +209,7 @@ program
       await loadPricing()
       const { range, label } = getDateRange(period)
       const projects = await parseAllSessions(range, opts.provider)
-      console.log(JSON.stringify(buildJsonReport(projects, label), null, 2))
+      console.log(JSON.stringify(buildJsonReport(projects, label, period), null, 2))
       return
     }
     await renderDashboard(period, opts.provider, opts.refresh)
@@ -298,7 +305,7 @@ program
       await loadPricing()
       const { range, label } = getDateRange('today')
       const projects = await parseAllSessions(range, opts.provider)
-      console.log(JSON.stringify(buildJsonReport(projects, label), null, 2))
+      console.log(JSON.stringify(buildJsonReport(projects, label, 'today'), null, 2))
       return
     }
     await renderDashboard('today', opts.provider, opts.refresh)
@@ -315,7 +322,7 @@ program
       await loadPricing()
       const { range, label } = getDateRange('month')
       const projects = await parseAllSessions(range, opts.provider)
-      console.log(JSON.stringify(buildJsonReport(projects, label), null, 2))
+      console.log(JSON.stringify(buildJsonReport(projects, label, 'month'), null, 2))
       return
     }
     await renderDashboard('month', opts.provider, opts.refresh)
