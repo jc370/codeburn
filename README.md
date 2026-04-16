@@ -44,19 +44,40 @@ npx codeburn
 ## Usage
 
 ```bash
-codeburn                    # interactive dashboard (default: 7 days)
-codeburn today              # today's usage
-codeburn month              # this month's usage
-codeburn report -p 30days   # rolling 30-day window
-codeburn report -p all      # every recorded session
-codeburn report --refresh 60  # auto-refresh every 60 seconds
-codeburn status             # compact one-liner (today + month)
+codeburn                        # interactive dashboard (default: 7 days)
+codeburn today                  # today's usage
+codeburn month                  # this month's usage
+codeburn report -p 30days       # rolling 30-day window
+codeburn report -p all          # every recorded session
+codeburn report --format json   # full dashboard data as JSON
+codeburn report --refresh 60    # auto-refresh every 60 seconds
+codeburn status                 # compact one-liner (today + month)
 codeburn status --format json
-codeburn export             # CSV with today, 7 days, 30 days
-codeburn export -f json     # JSON export
+codeburn export                 # CSV with today, 7 days, 30 days
+codeburn export -f json         # JSON export
 ```
 
 Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q` to quit, `1` `2` `3` `4` `5` as shortcuts. The dashboard also shows average cost per session and the five most expensive sessions across all projects.
+
+### JSON output
+
+`report`, `today`, and `month` support `--format json` to output the full dashboard data as structured JSON to stdout:
+
+```bash
+codeburn report --format json             # 7-day JSON report
+codeburn today --format json              # today's data as JSON
+codeburn month --format json              # this month as JSON
+codeburn report -p 30days --format json   # 30-day window
+```
+
+The JSON includes all dashboard panels: overview (cost, calls, sessions, cache hit %), daily breakdown, projects, models with token counts, activities with one-shot rates, core tools, MCP servers, and shell commands. Pipe to `jq` for filtering:
+
+```bash
+codeburn report --format json | jq '.projects'
+codeburn today --format json | jq '.overview.cost'
+```
+
+For the lighter `status --format json` (today + month totals only) or file-based exports (`export -f json`), see above.
 
 ## Providers
 
