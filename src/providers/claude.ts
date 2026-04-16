@@ -5,6 +5,7 @@ import { homedir } from 'os'
 import type { Provider, SessionSource, SessionParser } from './types.js'
 
 const shortNames: Record<string, string> = {
+  'claude-opus-4-7': 'Opus 4.7',
   'claude-opus-4-6': 'Opus 4.6',
   'claude-opus-4-5': 'Opus 4.5',
   'claude-opus-4-1': 'Opus 4.1',

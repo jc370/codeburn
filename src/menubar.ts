@@ -1,4 +1,4 @@
-import { execSync } from 'child_process'
+import { execFileSync, execSync } from 'child_process'
 import { existsSync } from 'fs'
 import { chmod, mkdir, unlink, writeFile } from 'fs/promises'
 import { homedir, platform } from 'os'
@@ -7,6 +7,8 @@ import { formatCost, formatTokens } from './format.js'
 import { getCurrency } from './currency.js'
 
 const PLUGIN_REFRESH = '5m'
+const SWIFTBAR_PREFERENCES_DOMAIN = 'com.ameba.SwiftBar'
+const SWIFTBAR_PLUGIN_DIRECTORY_KEY = 'PluginDirectory'
 
 function getSwiftBarPluginDir(): string {
   return join(homedir(), 'Library', 'Application Support', 'SwiftBar', 'plugins')
@@ -14,6 +16,49 @@ function getSwiftBarPluginDir(): string {
 
 function getXbarPluginDir(): string {
   return join(homedir(), 'Library', 'Application Support', 'xbar', 'plugins')
+}
+
+export function parsePluginDirectoryPreference(value: string): string | undefined {
+  const pluginDir = value.trim()
+  if (!pluginDir) return undefined
+  if (pluginDir === '~') return homedir()
+  if (pluginDir.startsWith('~/')) return join(homedir(), pluginDir.slice(2))
+  return pluginDir
+}
+
+function getConfiguredSwiftBarPluginDir(): string | undefined {
+  if (platform() !== 'darwin') return undefined
+
+  try {
+    return parsePluginDirectoryPreference(execFileSync('defaults', [
+      'read',
+      SWIFTBAR_PREFERENCES_DOMAIN,
+      SWIFTBAR_PLUGIN_DIRECTORY_KEY,
+    ], { encoding: 'utf-8' }))
+  } catch {
+    return undefined
+  }
+}
+
+function getSwiftBarPluginDirs(): string[] {
+  const dirs = [getConfiguredSwiftBarPluginDir(), getSwiftBarPluginDir()]
+  return dirs.filter((dir, index): dir is string => dir !== undefined && dirs.indexOf(dir) === index)
+}
+
+export function chooseMenubarPluginDir(
+  swiftBarPluginDirs: string[],
+  xbarPluginDir: string,
+  pathExists: (path: string) => boolean,
+): { pluginDir: string; appName: string } {
+  const preferredSwiftBarDir = swiftBarPluginDirs[0] ?? getSwiftBarPluginDir()
+
+  for (const pluginDir of swiftBarPluginDirs) {
+    if (pathExists(pluginDir)) return { pluginDir, appName: 'SwiftBar' }
+  }
+
+  if (pathExists(xbarPluginDir)) return { pluginDir: xbarPluginDir, appName: 'xbar' }
+
+  return { pluginDir: preferredSwiftBarDir, appName: 'SwiftBar' }
 }
 
 function getCodeburnBin(): string {
@@ -225,18 +270,9 @@ export async function installMenubar(): Promise<string> {
   const bin = getCodeburnBin()
   const pluginContent = generatePlugin(bin)
 
-  let pluginDir: string
-  let appName: string
+  const { pluginDir, appName } = chooseMenubarPluginDir(getSwiftBarPluginDirs(), getXbarPluginDir(), existsSync)
 
-  if (existsSync(getSwiftBarPluginDir())) {
-    pluginDir = getSwiftBarPluginDir()
-    appName = 'SwiftBar'
-  } else if (existsSync(getXbarPluginDir())) {
-    pluginDir = getXbarPluginDir()
-    appName = 'xbar'
-  } else {
-    pluginDir = getSwiftBarPluginDir()
-    appName = 'SwiftBar'
+  if (!existsSync(pluginDir)) {
     await mkdir(pluginDir, { recursive: true })
   }
 
@@ -264,7 +300,7 @@ export async function installMenubar(): Promise<string> {
 
 export async function uninstallMenubar(): Promise<string> {
   const paths = [
-    join(getSwiftBarPluginDir(), `codeburn.${PLUGIN_REFRESH}.sh`),
+    ...getSwiftBarPluginDirs().map(dir => join(dir, `codeburn.${PLUGIN_REFRESH}.sh`)),
     join(getXbarPluginDir(), `codeburn.${PLUGIN_REFRESH}.sh`),
   ]
 

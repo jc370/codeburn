@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.6.1 - 2026-04-16
+
+### Added
+- **JSON output on `report`, `today`, `month`.** `--format json` writes the
+  full dashboard (overview, daily, projects, models, activities, tools, MCP
+  servers, shell commands, top sessions) to stdout. Contributed by @mallek.
+- **Project filters.** `--project <name>` and `--exclude <name>` on all
+  commands (`report`, `today`, `month`, `status`, `export`). Case-insensitive
+  substring match against project name and path. Both flags are repeatable.
+  Contributed by @mallek.
+- **claude-opus-4-7 model mapping and pricing.** Displays as `Opus 4.7` with
+  the same Opus pricing as 4.6 and a 6x fast multiplier. Contributed by @mallek.
+- **Unit tests for `filterProjectsByName`** covering include/exclude
+  semantics, case-insensitivity, path matching, and input immutability.
+
+### Fixed
+- **Top Sessions panel truncating the calls column.** Row width filled the
+  full panel width without leaving room for the border and padding, so Ink
+  truncated the last 4 characters -- landing exactly on the calls column and
+  producing rows like `$182.58 ...` with no value.
+- **SwiftBar custom plugin directory** now honoured when installing the
+  menubar widget. Reads the configured path from SwiftBar's defaults before
+  falling back to the standard location. Contributed by @Galeas.
+- **`status --format menubar` per-provider today totals** now respect
+  `--project`/`--exclude`. The main period blocks already did, the provider
+  breakdown loop was the one spot that bypassed the filter.
+
+## 0.6.0 - 2026-04-16
+
+### Added
+- **GitHub Copilot provider.** Parses `~/.copilot/session-state/*/events.jsonl`
+  and tracks model changes via `session.model_change` events. Picks up six new
+  model prices (`gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5-mini`, `o3`,
+  `o4-mini`). Contributed by @theodorosD. Note: Copilot logs only output
+  tokens, so cost rows will sit below actual API cost.
+- **All Time period (key `5`).** Shows every recorded session since CodeBurn
+  started tracking. Daily Activity expands to every available day instead of
+  the fixed 14- or 31-day window. `codeburn report -p all` also works from
+  the CLI. Contributed by @lfl1337.
+- **avg/s column in By Project.** Average cost per session next to the
+  existing total cost and session count. Surfaces projects where individual
+  sessions are expensive even if the total is modest. Contributed by @lfl1337.
+- **Top Sessions panel.** Highlights the five most expensive sessions across
+  all projects with date, project, cost, and API call count. Helps spot
+  outliers that drag weekly or monthly totals. Contributed by @lfl1337.
+
+### Fixed
+- `modelDisplayName` now matches longest key first so `gpt-4.1-mini` resolves
+  to `GPT-4.1 Mini` instead of `GPT-4.1`.
+- `TopSessions` handles missing `firstTimestamp` gracefully with a
+  `----------` placeholder instead of rendering a stray whitespace row.
+
 ## 0.5.0 - 2026-04-15
 
 ### Added

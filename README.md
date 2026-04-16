@@ -19,7 +19,7 @@
   <img src="https://raw.githubusercontent.com/AgentSeal/codeburn/main/assets/dashboard.jpg" alt="CodeBurn TUI dashboard" width="620" />
 </p>
 
-By task type, tool, model, MCP server, and project. Supports **Claude Code**, **Codex** (OpenAI), **Cursor**, **OpenCode**, and **Pi** with a provider plugin system. Tracks one-shot success rate per activity type so you can see where the AI nails it first try vs. burns tokens on edit/test/fix retries. Interactive TUI dashboard with gradient charts, responsive panels, and keyboard navigation. macOS menu bar widget via SwiftBar. CSV/JSON export.
+By task type, tool, model, MCP server, and project. Supports **Claude Code**, **Codex** (OpenAI), **Cursor**, **OpenCode**, **Pi**, and **GitHub Copilot** with a provider plugin system. Tracks one-shot success rate per activity type so you can see where the AI nails it first try vs. burns tokens on edit/test/fix retries. Interactive TUI dashboard with gradient charts, responsive panels, and keyboard navigation. macOS menu bar widget via SwiftBar. CSV/JSON export.
 
 Works by reading session data directly from disk. No wrapper, no proxy, no API keys. Pricing from LiteLLM (auto-cached, all models supported).
 
@@ -38,41 +38,78 @@ npx codeburn
 ### Requirements
 
 - Node.js 20+
-- Claude Code (`~/.claude/projects/`), Codex (`~/.codex/sessions/`), Cursor, OpenCode, and/or Pi (`~/.pi/agent/sessions/`)
+- Claude Code (`~/.claude/projects/`), Codex (`~/.codex/sessions/`), Cursor, OpenCode, Pi (`~/.pi/agent/sessions/`), and/or GitHub Copilot (`~/.copilot/session-state/`)
 - For Cursor/OpenCode support: `better-sqlite3` is installed automatically as an optional dependency
 
 ## Usage
 
 ```bash
-codeburn                    # interactive dashboard (default: 7 days)
-codeburn today              # today's usage
-codeburn month              # this month's usage
-codeburn report -p 30days   # rolling 30-day window
-codeburn report --refresh 60  # auto-refresh every 60 seconds
-codeburn status             # compact one-liner (today + month)
+codeburn                        # interactive dashboard (default: 7 days)
+codeburn today                  # today's usage
+codeburn month                  # this month's usage
+codeburn report -p 30days       # rolling 30-day window
+codeburn report -p all          # every recorded session
+codeburn report --format json   # full dashboard data as JSON
+codeburn report --refresh 60    # auto-refresh every 60 seconds
+codeburn status                 # compact one-liner (today + month)
 codeburn status --format json
-codeburn export             # CSV with today, 7 days, 30 days
-codeburn export -f json     # JSON export
+codeburn export                 # CSV with today, 7 days, 30 days
+codeburn export -f json         # JSON export
 ```
 
-Arrow keys switch between Today / 7 Days / 30 Days / Month. Press `q` to quit, `1` `2` `3` `4` as shortcuts.
+Arrow keys switch between Today / 7 Days / 30 Days / Month / All Time. Press `q` to quit, `1` `2` `3` `4` `5` as shortcuts. The dashboard also shows average cost per session and the five most expensive sessions across all projects.
+
+### JSON output
+
+`report`, `today`, and `month` support `--format json` to output the full dashboard data as structured JSON to stdout:
+
+```bash
+codeburn report --format json             # 7-day JSON report
+codeburn today --format json              # today's data as JSON
+codeburn month --format json              # this month as JSON
+codeburn report -p 30days --format json   # 30-day window
+```
+
+The JSON includes all dashboard panels: overview (cost, calls, sessions, cache hit %), daily breakdown, projects, models with token counts, activities with one-shot rates, core tools, MCP servers, and shell commands. Pipe to `jq` for filtering:
+
+```bash
+codeburn report --format json | jq '.projects'
+codeburn today --format json | jq '.overview.cost'
+```
+
+For the lighter `status --format json` (today + month totals only) or file-based exports (`export -f json`), see above.
 
 ## Providers
 
 CodeBurn auto-detects which AI coding tools you use. If multiple providers have session data on disk, press `p` in the dashboard to toggle between them.
 
 ```bash
-codeburn report                    # all providers combined (default)
-codeburn report --provider claude  # Claude Code only
+codeburn report                      # all providers combined (default)
+codeburn report --provider claude    # Claude Code only
 codeburn report --provider codex     # Codex only
-codeburn report --provider cursor   # Cursor only
-codeburn report --provider opencode # OpenCode only
-codeburn report --provider pi       # Pi only
-codeburn today --provider codex     # Codex today
-codeburn export --provider claude  # export Claude data only
+codeburn report --provider cursor    # Cursor only
+codeburn report --provider opencode  # OpenCode only
+codeburn report --provider pi        # Pi only
+codeburn report --provider copilot   # GitHub Copilot only
+codeburn today --provider codex      # Codex today
+codeburn export --provider claude    # export Claude data only
 ```
 
 The `--provider` flag works on all commands: `report`, `today`, `month`, `status`, `export`.
+
+### Project filtering
+
+Filter results by project name (case-insensitive substring match). Both flags are repeatable:
+
+```bash
+codeburn report --project myapp                  # show only projects matching "myapp"
+codeburn report --exclude myapp                  # show everything except "myapp"
+codeburn report --exclude myapp --exclude tests  # exclude multiple projects
+codeburn month --project api --project web       # include multiple projects
+codeburn export --project inventory              # export only "inventory" project data
+```
+
+The `--project` and `--exclude` flags work on all commands and can be combined with `--provider`.
 
 ### Supported providers
 
@@ -84,11 +121,14 @@ The `--provider` flag works on all commands: `report`, `today`, `month`, `status
 | Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | Supported |
 | OpenCode | `~/.local/share/opencode/` (SQLite) | Supported |
 | Pi | `~/.pi/agent/sessions/` | Supported |
+| GitHub Copilot | `~/.copilot/session-state/` | Supported (output tokens only) |
 | Amp | -- | Planned (provider plugin system) |
 
 Codex tool names are normalized to match Claude's conventions (`exec_command` shows as `Bash`, `read_file` as `Read`, etc.) so the activity classifier and tool breakdown work across providers.
 
 Cursor reads token usage from its local SQLite database. Since Cursor's "Auto" mode hides the actual model used, costs are estimated using Sonnet pricing (labeled "Auto (Sonnet est.)" in the dashboard). The Cursor view shows a **Languages** panel (extracted from code blocks) instead of Core Tools/Shell/MCP panels, since Cursor does not log individual tool calls. First run on a large Cursor database may take up to a minute; results are cached and subsequent runs are instant.
+
+GitHub Copilot only logs output tokens in its session state, so Copilot cost rows sit below actual API cost. The model is tracked via `session.model_change` events; messages before the first model change are skipped to avoid silent misattribution.
 
 ### Adding a provider
 

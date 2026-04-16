@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { render, Box, Text, useInput, useApp, useWindowSize } from 'ink'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 import { formatCost, formatTokens } from './format.js'
-import { parseAllSessions } from './parser.js'
+import { parseAllSessions, filterProjectsByName } from './parser.js'
 import { loadPricing } from './models.js'
 import { getAllProviders } from './providers/index.js'
 import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult } from './optimize.js'
@@ -136,6 +136,8 @@ function HBar({ value, max, width }: { value: number; max: number; width: number
     </Text>
   )
 }
+
+const PANEL_CHROME = 4
 
 function Panel({ title, color, children, width }: { title: string; color: string; children: React.ReactNode; width: number }) {
   return (
@@ -387,7 +389,7 @@ function TopSessions({ projects, pw, bw }: { projects: ProjectSummary[]; pw: num
   }
 
   const maxCost = top[0].totalCostUSD
-  const nw = Math.max(8, pw - bw - TOP_SESSIONS_COST_COL - TOP_SESSIONS_CALLS_COL - 1)
+  const nw = Math.max(8, pw - bw - TOP_SESSIONS_COST_COL - TOP_SESSIONS_CALLS_COL - 1 - PANEL_CHROME)
 
   return (
     <Panel title="Top Sessions" color={PANEL_COLORS.sessions} width={pw}>
@@ -572,7 +574,14 @@ function DashboardContent({ projects, period, columns, activeProvider, budgets }
   )
 }
 
-function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider, refreshSeconds }: { initialProjects: ProjectSummary[]; initialPeriod: Period; initialProvider: string; refreshSeconds?: number }) {
+function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider, refreshSeconds, projectFilter, excludeFilter }: {
+  initialProjects: ProjectSummary[]
+  initialPeriod: Period
+  initialProvider: string
+  refreshSeconds?: number
+  projectFilter?: string[]
+  excludeFilter?: string[]
+}) {
   const { exit } = useApp()
   const [period, setPeriod] = useState<Period>(initialPeriod)
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
@@ -632,9 +641,11 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
   const reloadData = useCallback(async (p: Period, prov: string) => {
     setLoading(true)
     setOptimizeResult(null)
-    setProjects(await parseAllSessions(getDateRange(p), prov))
+    const range = getDateRange(p)
+    const data = filterProjectsByName(await parseAllSessions(range, prov), projectFilter, excludeFilter)
+    setProjects(data)
     setLoading(false)
-  }, [])
+  }, [projectFilter, excludeFilter])
 
   useEffect(() => {
     if (!refreshSeconds || refreshSeconds <= 0) return
@@ -708,12 +719,15 @@ function StaticDashboard({ projects, period, activeProvider }: { projects: Proje
   )
 }
 
-export async function renderDashboard(period: Period = 'week', provider: string = 'all', refreshSeconds?: number): Promise<void> {
+export async function renderDashboard(period: Period = 'week', provider: string = 'all', refreshSeconds?: number, projectFilter?: string[], excludeFilter?: string[]): Promise<void> {
   await loadPricing()
-  const projects = await parseAllSessions(getDateRange(period), provider)
+  const range = getDateRange(period)
+  const projects = filterProjectsByName(await parseAllSessions(range, provider), projectFilter, excludeFilter)
   const isTTY = process.stdin.isTTY && process.stdout.isTTY
   if (isTTY) {
-    const { waitUntilExit } = render(<InteractiveDashboard initialProjects={projects} initialPeriod={period} initialProvider={provider} refreshSeconds={refreshSeconds} />)
+    const { waitUntilExit } = render(
+      <InteractiveDashboard initialProjects={projects} initialPeriod={period} initialProvider={provider} refreshSeconds={refreshSeconds} projectFilter={projectFilter} excludeFilter={excludeFilter} />
+    )
     await waitUntilExit()
   } else {
     const { unmount } = render(<StaticDashboard projects={projects} period={period} activeProvider={provider} />, { patchConsole: false })
