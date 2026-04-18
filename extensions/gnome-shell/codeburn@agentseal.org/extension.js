@@ -73,6 +73,7 @@ class CodeburnIndicator extends PanelMenu.Button {
         this._loading = false;
         this._timeout = null;
         this._payload = null;
+        this._availableProviders = this._detectAvailableProviders();
 
         this._themeSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
         this._themeSignal = this._themeSettings.connect('changed::color-scheme', () => this._applyThemeClass());
@@ -142,9 +143,24 @@ class CodeburnIndicator extends PanelMenu.Button {
     }
 
     _buildAgentTabs() {
+        // Only show the tab row when at least two providers have data on this
+        // machine. A single provider (or none) means there's nothing to filter,
+        // so we skip the row entirely and leave this._provider = 'all'.
+        const detected = this._availableProviders;
+        if (detected.length < 2) {
+            this._agentTabs = new Map();
+            return;
+        }
+        // Build tab list: "All" first, then every detected provider in our
+        // preferred order.
+        const tabs = [PROVIDERS[0]]; // 'All'
+        for (const p of PROVIDERS.slice(1)) {
+            if (detected.includes(p.id)) tabs.push(p);
+        }
+
         const row = new St.BoxLayout({style_class: 'codeburn-tab-row'});
         this._agentTabs = new Map();
-        for (const p of PROVIDERS) {
+        for (const p of tabs) {
             const btn = new St.Button({
                 label: p.label,
                 style_class: 'codeburn-tab',
@@ -161,6 +177,25 @@ class CodeburnIndicator extends PanelMenu.Button {
         }
         this._root.add_child(row);
         this._updateAgentTabStyle();
+    }
+
+    /// Scan the home directory for provider session stores so the agent tab row
+    /// can only offer providers the user actually runs. Checks file/dir existence
+    /// only; the CLI still owns real "has usable data" semantics.
+    _detectAvailableProviders() {
+        const home = GLib.get_home_dir();
+        const paths = {
+            claude: `${home}/.claude/projects`,
+            codex: `${home}/.codex/sessions`,
+            cursor: `${home}/.config/Cursor/User/globalStorage/state.vscdb`,
+            copilot: `${home}/.copilot/session-state`,
+        };
+        const out = [];
+        for (const [id, path] of Object.entries(paths)) {
+            const file = Gio.File.new_for_path(path);
+            if (file.query_exists(null)) out.push(id);
+        }
+        return out;
     }
 
     _updateAgentTabStyle() {
