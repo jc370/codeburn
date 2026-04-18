@@ -156,7 +156,7 @@ The menu bar widget includes a currency picker with 17 common currencies. For an
 
 ## Menu Bar
 
-<img src="https://cdn.jsdelivr.net/gh/AgentSeal/codeburn@main/assets/menubar.png?v=0.7.2" alt="CodeBurn macOS menubar app" width="420" />
+<img src="https://cdn.jsdelivr.net/gh/AgentSeal/codeburn@main/assets/menubar-0.7.2.png" alt="CodeBurn macOS menubar app" width="420" />
 
 ```bash
 npx codeburn menubar
