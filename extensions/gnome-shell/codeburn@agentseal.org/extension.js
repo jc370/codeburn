@@ -17,6 +17,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
 import Soup from 'gi://Soup?version=3.0';
+import Pango from 'gi://Pango';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
@@ -180,6 +181,21 @@ class CodeburnIndicator extends PanelMenu.Button {
         const tabs = detected.length === 1
             ? PROVIDERS.filter(p => p.id === detected[0])
             : [PROVIDERS[0], ...PROVIDERS.slice(1).filter(p => detected.includes(p.id))];
+
+        // Single provider: render as a subtle pill badge (not a stretched button)
+        // so it reads as an indicator, not a filter. Multiple providers: full
+        // horizontal tab row with per-pill active state.
+        if (tabs.length === 1) {
+            const badge = new St.Label({
+                text: tabs[0].label,
+                style_class: 'codeburn-agent-badge',
+            });
+            const row = new St.BoxLayout({style_class: 'codeburn-tab-row'});
+            row.add_child(badge);
+            this._root.add_child(row);
+            this._agentTabs = new Map();
+            return;
+        }
 
         const row = new St.BoxLayout({style_class: 'codeburn-tab-row'});
         this._agentTabs = new Map();
@@ -510,18 +526,28 @@ class CodeburnIndicator extends PanelMenu.Button {
 
     _renderChart(daily) {
         this._chartBars.destroy_all_children();
-        if (!daily.length) {
-            this._chartTotal.set_text('');
+        const days = Array.isArray(daily) ? daily.slice(-19) : [];
+        if (days.length === 0) {
+            this._chartTotal.set_text('no history yet');
             return;
         }
-        const window = daily.slice(-19); // last 19 days, matches Mac Trend chart
-        const totals = window.map(d => Number(d.inputTokens || 0) + Number(d.outputTokens || 0) + Number(d.cacheReadTokens || 0) + Number(d.cacheWriteTokens || 0));
-        const maxTotal = Math.max(...totals, 1);
-        const totalAll = totals.reduce((a, b) => a + b, 0);
+        const totals = days.map(d => {
+            const input = Number(d?.inputTokens) || 0;
+            const output = Number(d?.outputTokens) || 0;
+            const cacheR = Number(d?.cacheReadTokens) || 0;
+            const cacheW = Number(d?.cacheWriteTokens) || 0;
+            return input + output + cacheR + cacheW;
+        });
+        let maxTotal = 1;
+        let totalAll = 0;
+        for (const t of totals) {
+            if (t > maxTotal) maxTotal = t;
+            totalAll += t;
+        }
         this._chartTotal.set_text(`${formatTokensCompact(totalAll)} tokens`);
         const CHART_HEIGHT = 52;
         const BAR_WIDTH = 12;
-        for (let i = 0; i < window.length; i++) {
+        for (let i = 0; i < days.length; i++) {
             const h = Math.max(2, Math.round((totals[i] / maxTotal) * CHART_HEIGHT));
             const col = new St.BoxLayout({vertical: true, style_class: 'codeburn-chart-col'});
             const spacer = new St.Widget({style_class: 'codeburn-chart-spacer'});
@@ -659,10 +685,15 @@ class CodeburnIndicator extends PanelMenu.Button {
 
     _renderPlanView() {
         this._contentArea.add_child(this._sectionTitle('Plan'));
-        this._contentArea.add_child(new St.Label({
+        const msg = new St.Label({
             text: 'Claude OAuth subscription tracking is macOS-only for now. Coming to Linux in a future release.',
             style_class: 'codeburn-empty',
-        }));
+            x_expand: true,
+        });
+        msg.clutter_text.line_wrap = true;
+        msg.clutter_text.line_wrap_mode = Pango.WrapMode.WORD;
+        msg.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+        this._contentArea.add_child(msg);
     }
 
     _sectionTitle(text) {

@@ -100,6 +100,14 @@
     opacity: 1;
     font-weight: 600;
 }
+.codeburn-agent-badge {
+    padding: 3px 10px;
+    border-radius: 10px;
+    background: rgba(255, 140, 66, 0.12);
+    color: #ff8c42;
+    font-size: 10.5px;
+    font-weight: 500;
+}
 
 /* ---- hero ---- */
 .codeburn-hero {
