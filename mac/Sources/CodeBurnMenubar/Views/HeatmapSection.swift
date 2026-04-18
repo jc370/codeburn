@@ -209,7 +209,7 @@ private struct TrendChart: View {
             // Floats below the chart without taking layout space. Opaque dark card hides
             // whatever sits beneath it (mini stats, activity rows).
             if let hoveredBar {
-                BarTooltipCard(bar: hoveredBar, formatValue: formatValue)
+                BarTooltipCard(bar: hoveredBar, value: metric(hoveredBar), formatValue: formatValue)
                     .padding(.top, 6)
                     .offset(y: 92)
                     .transition(.opacity)
@@ -260,6 +260,12 @@ private struct BarColumn: View {
 
 private struct BarTooltipCard: View {
     let bar: TrendBar
+    /// Value to display in the tooltip header. Matches the metric the trend chart
+    /// is currently using (tokens when the .all-providers view has token data,
+    /// cost when provider-filtered views force a $ fallback). Passing this in keeps
+    /// the tooltip in sync with the chart instead of always reading bar.tokens,
+    /// which is zero for provider-filtered days.
+    let value: Double
     let formatValue: (Double) -> String
     @Environment(\.colorScheme) private var colorScheme
 
@@ -290,7 +296,7 @@ private struct BarTooltipCard: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(primaryText)
                 Spacer()
-                Text("\(formatValue(bar.tokens))")
+                Text("\(formatValue(value))")
                     .font(.codeMono(size: 10.5, weight: .semibold))
                     .foregroundStyle(Theme.brandAccent)
             }
@@ -313,10 +319,6 @@ private struct BarTooltipCard: View {
                         }
                     }
                 }
-            } else {
-                Text("No model breakdown available")
-                    .font(.system(size: 10))
-                    .foregroundStyle(tertiaryText)
             }
         }
         .padding(11)
