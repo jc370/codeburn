@@ -1,0 +1,50 @@
+name: Publish to npm
+
+# Triggers when a semver tag (v*) is pushed. Publishes `codeburn` to the npm
+# registry using npm OIDC trusted publishing, so no NPM_TOKEN lives in
+# secrets. The `npm-publish` Environment requires a human approval before
+# the publish step runs.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # Required for npm OIDC provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify tag matches package.json
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [[ "$TAG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)" >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test -- --run
+
+      - name: Publish with provenance
+        run: npm publish --provenance --access public
