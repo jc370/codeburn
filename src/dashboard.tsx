@@ -11,16 +11,17 @@ import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult
 import { estimateContextBudget, discoverProjectCwd, type ContextBudget } from './context-budget.js'
 import { join } from 'path'
 
-type Period = 'today' | 'week' | '30days' | 'month' | 'all'
+type Period = 'today' | 'week' | '30days' | 'month' | 'all' | 'custom'
 type View = 'dashboard' | 'optimize'
 
-const PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all']
+const PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all', 'custom']
 const PERIOD_LABELS: Record<Period, string> = {
   today: 'Today',
   week: '7 Days',
   '30days': '30 Days',
   month: 'This Month',
   all: 'All Time',
+  custom: 'Custom',
 }
 
 const MIN_WIDE = 90
@@ -98,7 +99,7 @@ function gradientColor(pct: number): string {
   return toHex(lerp(255, 245, t), lerp(140, 91, t), lerp(66, 91, t))
 }
 
-function getDateRange(period: Period): { start: Date; end: Date } {
+function getDateRange(period: Period, customRange?: { start: string; end: string }): { start: Date; end: Date } {
   const now = new Date()
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
   switch (period) {
@@ -107,6 +108,15 @@ function getDateRange(period: Period): { start: Date; end: Date } {
     case '30days': return { start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30), end }
     case 'month': return { start: new Date(now.getFullYear(), now.getMonth(), 1), end }
     case 'all': return { start: new Date(0), end }
+    case 'custom': {
+      if (customRange?.start && customRange?.end) {
+        return {
+          start: new Date(customRange.start + 'T00:00:00'),
+          end: new Date(customRange.end + 'T23:59:59.999'),
+        }
+      }
+      return { start: new Date(0), end }
+    }
   }
 }
 
@@ -456,19 +466,66 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 }
 function getProviderDisplayName(name: string): string { return PROVIDER_DISPLAY_NAMES[name] ?? name }
 
-function PeriodTabs({ active, providerName, showProvider }: { active: Period; providerName?: string; showProvider?: boolean }) {
+function PeriodTabs({ active, providerName, showProvider, customRange }: { active: Period; providerName?: string; showProvider?: boolean; customRange?: { start: string; end: string } | null }) {
   return (
     <Box justifyContent="space-between" paddingX={1}>
       <Box gap={1}>
-        {PERIODS.map(p => (
-          <Text key={p} bold={active === p} color={active === p ? ORANGE : DIM}>
-            {active === p ? `[ ${PERIOD_LABELS[p]} ]` : `  ${PERIOD_LABELS[p]}  `}
-          </Text>
-        ))}
+        {PERIODS.map(p => {
+          const label = p === 'custom' && active === 'custom' && customRange
+            ? `${customRange.start} → ${customRange.end}`
+            : PERIOD_LABELS[p]
+          return (
+            <Text key={p} bold={active === p} color={active === p ? ORANGE : DIM}>
+              {active === p ? `[ ${label} ]` : `  ${label}  `}
+            </Text>
+          )
+        })}
       </Box>
       {showProvider && providerName && (
         <Box><Text color={DIM}>|  </Text><Text color={ORANGE} bold>[p]</Text><Text bold color={PROVIDER_COLORS[providerName] ?? ORANGE}> {getProviderDisplayName(providerName)}</Text></Box>
       )}
+    </Box>
+  )
+}
+
+function ProjectFilterBar({ filterMode, filterInput, activeFilter, allProjects }: { filterMode: boolean; filterInput: string; activeFilter: string | null; allProjects: ProjectSummary[] }) {
+  if (!filterMode && !activeFilter) return null
+  const suggestions = filterMode && filterInput.length > 0
+    ? allProjects.map(p => shortProject(p.project)).filter(n => n.toLowerCase().includes(filterInput.toLowerCase())).slice(0, 4)
+    : []
+  return (
+    <Box paddingX={1}>
+      <Text color={ORANGE} bold>[f] </Text>
+      {filterMode ? (
+        <Text>
+          <Text dimColor>Project filter: </Text>
+          <Text color={ORANGE}>{filterInput}</Text>
+          <Text color={ORANGE}>▌</Text>
+          {suggestions.length > 0 && <Text dimColor>   {suggestions.join('  ·  ')}</Text>}
+          <Text dimColor>  Enter=apply  Esc=cancel</Text>
+        </Text>
+      ) : (
+        <Text>
+          <Text dimColor>Project: </Text>
+          <Text color={ORANGE} bold>{activeFilter}</Text>
+          <Text dimColor>  (f=change  Esc=clear)</Text>
+        </Text>
+      )}
+    </Box>
+  )
+}
+
+function CustomDatePrompt({ mode, buffer, pendingStart }: { mode: 'start' | 'end'; buffer: string; pendingStart?: string }) {
+  return (
+    <Box borderStyle="round" borderColor={ORANGE} paddingX={1}>
+      <Text>
+        <Text color={ORANGE} bold>Custom range  </Text>
+        {pendingStart && <Text dimColor>{pendingStart} → </Text>}
+        <Text dimColor>{mode === 'start' ? 'Start' : 'End'} date (YYYY-MM-DD): </Text>
+        <Text color={ORANGE}>{buffer}</Text>
+        <Text color={ORANGE}>▌</Text>
+        <Text dimColor>  Enter=confirm  Esc=cancel</Text>
+      </Text>
     </Box>
   )
 }
@@ -525,7 +582,7 @@ function OptimizeView({ findings, costRate, projects, label, width, healthScore,
   )
 }
 
-function StatusBar({ width, showProvider, view, findingCount, optimizeAvailable }: { width: number; showProvider?: boolean; view?: View; findingCount?: number; optimizeAvailable?: boolean }) {
+function StatusBar({ width, showProvider, view, findingCount, optimizeAvailable, hasProjectFilter }: { width: number; showProvider?: boolean; view?: View; findingCount?: number; optimizeAvailable?: boolean; hasProjectFilter?: boolean }) {
   const isOptimize = view === 'optimize'
   return (
     <Box borderStyle="round" borderColor={DIM} width={width} justifyContent="center" paddingX={1}>
@@ -536,9 +593,11 @@ function StatusBar({ width, showProvider, view, findingCount, optimizeAvailable 
         <Text color={ORANGE} bold>q</Text><Text dimColor> quit   </Text>
         <Text color={ORANGE} bold>1</Text><Text dimColor> today   </Text>
         <Text color={ORANGE} bold>2</Text><Text dimColor> week   </Text>
-        <Text color={ORANGE} bold>3</Text><Text dimColor> 30 days   </Text>
+        <Text color={ORANGE} bold>3</Text><Text dimColor> 30d   </Text>
         <Text color={ORANGE} bold>4</Text><Text dimColor> month   </Text>
-        <Text color={ORANGE} bold>5</Text><Text dimColor> all time</Text>
+        <Text color={ORANGE} bold>5</Text><Text dimColor> all   </Text>
+        <Text color={ORANGE} bold>6</Text><Text dimColor> custom   </Text>
+        <Text color={ORANGE} bold>f</Text><Text dimColor color={hasProjectFilter ? ORANGE : DIM}> {hasProjectFilter ? 'filter ●' : 'filter'}</Text>
         {!isOptimize && optimizeAvailable && findingCount != null && findingCount > 0 && (
           <><Text dimColor>   </Text><Text color={ORANGE} bold>o</Text><Text dimColor> optimize</Text><Text color="#F55B5B"> ({findingCount})</Text></>
         )}
@@ -584,19 +643,36 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
 }) {
   const { exit } = useApp()
   const [period, setPeriod] = useState<Period>(initialPeriod)
-  const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
+  const [rawProjects, setRawProjects] = useState<ProjectSummary[]>(initialProjects)
   const [loading, setLoading] = useState(false)
   const [activeProvider, setActiveProvider] = useState(initialProvider)
   const [detectedProviders, setDetectedProviders] = useState<string[]>([])
   const [view, setView] = useState<View>('dashboard')
   const [optimizeResult, setOptimizeResult] = useState<OptimizeResult | null>(null)
   const [projectBudgets, setProjectBudgets] = useState<Map<string, ContextBudget>>(new Map())
+
+  // Custom date range
+  const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null)
+  const [dateInputMode, setDateInputMode] = useState<'start' | 'end' | null>(null)
+  const [dateBuffer, setDateBuffer] = useState<string>('')
+  const [pendingStart, setPendingStart] = useState<string>('')
+
+  // Project filter
+  const [filterMode, setFilterMode] = useState<boolean>(false)
+  const [filterInput, setFilterInput] = useState<string>('')
+  const [activeProjectFilter, setActiveProjectFilter] = useState<string | null>(null)
+
   const { columns } = useWindowSize()
   const { dashWidth } = getLayout(columns)
   const multipleProviders = detectedProviders.length > 1
   const optimizeAvailable = activeProvider === 'all' || activeProvider === 'claude'
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const findingCount = optimizeResult?.findings.length ?? 0
+
+  // Derive filtered projects from raw + active filter
+  const projects = activeProjectFilter
+    ? rawProjects.filter(p => shortProject(p.project).toLowerCase().includes(activeProjectFilter.toLowerCase()))
+    : rawProjects
 
   useEffect(() => {
     let cancelled = false
@@ -631,30 +707,31 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
     let cancelled = false
     async function scan() {
       if (projects.length === 0) { setOptimizeResult(null); return }
-      const result = await scanAndDetect(projects, getDateRange(period))
+      const result = await scanAndDetect(projects, getDateRange(period, customRange ?? undefined))
       if (!cancelled) setOptimizeResult(result)
     }
     scan()
     return () => { cancelled = true }
-  }, [projects, period, optimizeAvailable])
+  }, [projects, period, optimizeAvailable, customRange])
 
-  const reloadData = useCallback(async (p: Period, prov: string) => {
+  const reloadData = useCallback(async (p: Period, prov: string, cr?: { start: string; end: string }) => {
     setLoading(true)
     setOptimizeResult(null)
-    const range = getDateRange(p)
+    const range = getDateRange(p, cr)
     const data = filterProjectsByName(await parseAllSessions(range, prov), projectFilter, excludeFilter)
-    setProjects(data)
+    setRawProjects(data)
     setLoading(false)
   }, [projectFilter, excludeFilter])
 
   useEffect(() => {
     if (!refreshSeconds || refreshSeconds <= 0) return
-    const id = setInterval(() => { reloadData(period, activeProvider) }, refreshSeconds * 1000)
+    const id = setInterval(() => { reloadData(period, activeProvider, customRange ?? undefined) }, refreshSeconds * 1000)
     return () => clearInterval(id)
-  }, [refreshSeconds, period, activeProvider, reloadData])
+  }, [refreshSeconds, period, activeProvider, reloadData, customRange])
 
   const switchPeriod = useCallback((np: Period) => {
     if (np === period) return
+    if (np === 'custom') { setDateInputMode('start'); setDateBuffer(''); setPendingStart(''); setPeriod('custom'); return }
     setPeriod(np); setView('dashboard')
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => { reloadData(np, activeProvider) }, 600)
@@ -662,20 +739,56 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
 
   const switchPeriodImmediate = useCallback(async (np: Period) => {
     if (np === period) return
+    if (np === 'custom') { setDateInputMode('start'); setDateBuffer(''); setPendingStart(''); setPeriod('custom'); return }
     setPeriod(np); setView('dashboard')
     if (debounceRef.current) clearTimeout(debounceRef.current)
     await reloadData(np, activeProvider)
   }, [period, activeProvider, reloadData])
 
   useInput((input, key) => {
+    // --- Date input mode ---
+    if (dateInputMode !== null) {
+      if (key.escape) { setDateInputMode(null); setDateBuffer(''); if (period === 'custom' && !customRange) setPeriod('all'); return }
+      if (key.backspace || key.delete) { setDateBuffer(b => b.slice(0, -1)); return }
+      if (key.return) {
+        const iso = /^\d{4}-\d{2}-\d{2}$/.test(dateBuffer) ? dateBuffer : null
+        if (!iso) return
+        if (dateInputMode === 'start') {
+          setPendingStart(iso); setDateInputMode('end'); setDateBuffer(''); return
+        }
+        // end date confirmed
+        const cr = { start: pendingStart, end: iso }
+        setCustomRange(cr); setDateInputMode(null); setDateBuffer(''); setView('dashboard')
+        reloadData('custom', activeProvider, cr); return
+      }
+      if (input && /[\d-]/.test(input) && dateBuffer.length < 10) { setDateBuffer(b => b + input); return }
+      return
+    }
+
+    // --- Filter mode ---
+    if (filterMode) {
+      if (key.escape) { setFilterMode(false); setFilterInput(''); return }
+      if (key.backspace || key.delete) { setFilterInput(f => f.slice(0, -1)); return }
+      if (key.return) {
+        const match = rawProjects.map(p => shortProject(p.project)).find(n => n.toLowerCase().includes(filterInput.toLowerCase()))
+        setActiveProjectFilter(filterInput.length > 0 ? filterInput : null)
+        setFilterMode(false); setFilterInput(''); return
+      }
+      if (input && input.length === 1) { setFilterInput(f => f + input); return }
+      return
+    }
+
+    // --- Normal mode ---
     if (input === 'q') { exit(); return }
     if (input === 'o' && findingCount > 0 && view === 'dashboard' && optimizeAvailable) { setView('optimize'); return }
     if ((input === 'b' || key.escape) && view === 'optimize') { setView('dashboard'); return }
+    if (key.escape && activeProjectFilter) { setActiveProjectFilter(null); return }
+    if (input === 'f') { setFilterMode(true); setFilterInput(''); return }
     if (input === 'p' && multipleProviders) {
       const opts = ['all', ...detectedProviders]; const next = opts[(opts.indexOf(activeProvider) + 1) % opts.length]
       setActiveProvider(next); setView('dashboard')
       if (debounceRef.current) clearTimeout(debounceRef.current)
-      reloadData(period, next); return
+      reloadData(period, next, customRange ?? undefined); return
     }
     const idx = PERIODS.indexOf(period)
     if (key.leftArrow && view === 'dashboard') switchPeriod(PERIODS[(idx - 1 + PERIODS.length) % PERIODS.length])
@@ -685,25 +798,33 @@ function InteractiveDashboard({ initialProjects, initialPeriod, initialProvider,
     else if (input === '3') switchPeriodImmediate('30days')
     else if (input === '4') switchPeriodImmediate('month')
     else if (input === '5') switchPeriodImmediate('all')
+    else if (input === '6') switchPeriodImmediate('custom')
   })
+
+  const periodLabel = period === 'custom' && customRange
+    ? `${customRange.start} → ${customRange.end}`
+    : PERIOD_LABELS[period]
 
   if (loading) {
     return (
       <Box flexDirection="column" width={dashWidth}>
-        <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} />
-        <Panel title="CodeBurn" color={ORANGE} width={dashWidth}><Text dimColor>Loading {PERIOD_LABELS[period]}...</Text></Panel>
-        <StatusBar width={dashWidth} showProvider={multipleProviders} view="dashboard" findingCount={0} optimizeAvailable={false} />
+        <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} customRange={customRange} />
+        <Panel title="CodeBurn" color={ORANGE} width={dashWidth}><Text dimColor>Loading {periodLabel}...</Text></Panel>
+        <StatusBar width={dashWidth} showProvider={multipleProviders} view="dashboard" findingCount={0} optimizeAvailable={false} hasProjectFilter={!!activeProjectFilter} />
       </Box>
     )
   }
 
   return (
     <Box flexDirection="column" width={dashWidth}>
-      <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} />
-      {view === 'optimize' && optimizeResult
-        ? <OptimizeView findings={optimizeResult.findings} costRate={optimizeResult.costRate} projects={projects} label={PERIOD_LABELS[period]} width={dashWidth} healthScore={optimizeResult.healthScore} healthGrade={optimizeResult.healthGrade} />
-        : <DashboardContent projects={projects} period={period} columns={columns} activeProvider={activeProvider} budgets={projectBudgets} />}
-      <StatusBar width={dashWidth} showProvider={multipleProviders} view={view} findingCount={findingCount} optimizeAvailable={optimizeAvailable} />
+      <PeriodTabs active={period} providerName={activeProvider} showProvider={multipleProviders} customRange={customRange} />
+      <ProjectFilterBar filterMode={filterMode} filterInput={filterInput} activeFilter={activeProjectFilter} allProjects={rawProjects} />
+      {dateInputMode !== null
+        ? <CustomDatePrompt mode={dateInputMode} buffer={dateBuffer} pendingStart={pendingStart} />
+        : view === 'optimize' && optimizeResult
+          ? <OptimizeView findings={optimizeResult.findings} costRate={optimizeResult.costRate} projects={projects} label={periodLabel} width={dashWidth} healthScore={optimizeResult.healthScore} healthGrade={optimizeResult.healthGrade} />
+          : <DashboardContent projects={projects} period={period} columns={columns} activeProvider={activeProvider} budgets={projectBudgets} />}
+      <StatusBar width={dashWidth} showProvider={multipleProviders} view={view} findingCount={findingCount} optimizeAvailable={optimizeAvailable} hasProjectFilter={!!activeProjectFilter} />
     </Box>
   )
 }
