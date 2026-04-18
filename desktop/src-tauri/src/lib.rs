@@ -6,7 +6,9 @@ mod tray_linux;
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Manager, WindowEvent};
+#[cfg(not(target_os = "linux"))]
+use tauri::Emitter;
 #[cfg(target_os = "linux")]
 use tauri::Listener;
 
@@ -190,7 +192,9 @@ fn position_popover(window: &tauri::WebviewWindow, anchor: Option<(i32, i32)>) {
     let screen_w = screen.width as i32;
     let screen_h = screen.height as i32;
 
-    let (x, y) = match anchor {
+    let usable_anchor = anchor.filter(|(ax, ay)| *ax > 0 || *ay > 0);
+
+    let (x, y) = match usable_anchor {
         Some((click_x, click_y)) => {
             // Center horizontally on the click, drop the popover just below it. Clamp to
             // the screen so it doesn't fall off the edge on multi-monitor setups.
@@ -202,6 +206,9 @@ fn position_popover(window: &tauri::WebviewWindow, anchor: Option<(i32, i32)>) {
             (clamped_x, clamped_y)
         }
         None => {
+            // No usable anchor. Some SNI hosts (notably the GNOME AppIndicator extension)
+            // send (0, 0) instead of real screen coordinates. Fall back to the top-right
+            // corner where the StatusNotifier area lives on GNOME, KDE, and Unity.
             let x = (screen_w - pop_w - margin).max(0);
             (x, panel)
         }
