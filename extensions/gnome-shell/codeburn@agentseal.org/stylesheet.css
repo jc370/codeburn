@@ -206,7 +206,7 @@
     background: rgba(255, 140, 66, 0.2);
 }
 .codeburn-findings-inner {
-    spacing: 0;
+    spacing: 8px;
 }
 .codeburn-findings-count {
     font-size: 11.5px;

@@ -16,6 +16,7 @@ import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
+import Soup from 'gi://Soup?version=3.0';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
@@ -70,12 +71,20 @@ class CodeburnIndicator extends PanelMenu.Button {
         super._init(0.0, 'CodeBurn');
 
         this._period = 'today';
-        this._provider = 'all';
+        this._availableProviders = this._detectAvailableProviders();
+        // If only one provider is installed, use it directly so the popup doesn't
+        // pretend to be filtering when there's nothing to filter. Otherwise start
+        // on All so the user sees aggregate data.
+        this._provider = this._availableProviders.length === 1 ? this._availableProviders[0] : 'all';
         this._currency = this._loadCurrency();
+        this._fxRate = 1;
+        this._fxCache = {USD: 1};
+        this._soupSession = new Soup.Session();
         this._loading = false;
+        this._refreshGen = 0;
         this._timeout = null;
         this._payload = null;
-        this._availableProviders = this._detectAvailableProviders();
+        this._updateFxRate();
 
         this._themeSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
         this._themeSignal = this._themeSettings.connect('changed::color-scheme', () => this._applyThemeClass());
@@ -145,20 +154,18 @@ class CodeburnIndicator extends PanelMenu.Button {
     }
 
     _buildAgentTabs() {
-        // Only show the tab row when at least two providers have data on this
-        // machine. A single provider (or none) means there's nothing to filter,
-        // so we skip the row entirely and leave this._provider = 'all'.
+        // Hide the tab row only when nothing is installed. A single provider
+        // gets shown as a lone tab so the user still sees which agent the
+        // numbers come from (no "mystery data" state). Multiple providers
+        // get All + each detected tab in our preferred order.
         const detected = this._availableProviders;
-        if (detected.length < 2) {
+        if (detected.length === 0) {
             this._agentTabs = new Map();
             return;
         }
-        // Build tab list: "All" first, then every detected provider in our
-        // preferred order.
-        const tabs = [PROVIDERS[0]]; // 'All'
-        for (const p of PROVIDERS.slice(1)) {
-            if (detected.includes(p.id)) tabs.push(p);
-        }
+        const tabs = detected.length === 1
+            ? PROVIDERS.filter(p => p.id === detected[0])
+            : [PROVIDERS[0], ...PROVIDERS.slice(1).filter(p => detected.includes(p.id))];
 
         const row = new St.BoxLayout({style_class: 'codeburn-tab-row'});
         this._agentTabs = new Map();
@@ -347,12 +354,46 @@ class CodeburnIndicator extends PanelMenu.Button {
         proc.wait_async(null, () => {
             this._currency = this._loadCurrency();
             this._currencyBtn.set_label(`${this._currency.code} ⌄`);
-            this._refresh();
+            this._updateFxRate();
+        });
+    }
+
+    /// menubar-json payloads stay in USD regardless of the user's configured
+    /// currency, so we apply the FX conversion client-side. Frankfurter serves
+    /// the same ECB rates the CLI uses, cached per-session so a tab switch or
+    /// a period switch doesn't hit the network again.
+    _updateFxRate() {
+        const code = this._currency?.code || 'USD';
+        if (this._fxCache[code] !== undefined) {
+            this._fxRate = this._fxCache[code];
+            if (this._payload) this._render(this._payload);
+            return;
+        }
+        const url = `https://api.frankfurter.app/latest?from=USD&to=${code}`;
+        const msg = Soup.Message.new('GET', url);
+        this._soupSession.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (session, result) => {
+            try {
+                const bytes = session.send_and_read_finish(result);
+                if (!bytes) return;
+                const json = JSON.parse(new TextDecoder().decode(bytes.get_data()));
+                const rate = json?.rates?.[code];
+                if (typeof rate === 'number' && rate > 0) {
+                    this._fxCache[code] = rate;
+                    this._fxRate = rate;
+                    if (this._payload) this._render(this._payload);
+                }
+            } catch (_) {
+                // FX fetch failed; leave rate at previous value.
+            }
         });
     }
 
     _refresh() {
-        if (this._loading) return;
+        // Generation counter: a click while a previous fetch is in flight still
+        // fires a new process; the older response is dropped instead of racing
+        // to overwrite the new one. Solves the "first click does nothing" bug
+        // where the initial load was still running when the user tapped a tab.
+        const gen = ++this._refreshGen;
         this._loading = true;
 
         let proc;
@@ -368,6 +409,7 @@ class CodeburnIndicator extends PanelMenu.Button {
         }
 
         proc.communicate_utf8_async(null, null, (p, result) => {
+            if (gen !== this._refreshGen) return;
             this._loading = false;
             try {
                 const [ok, stdout, stderr] = p.communicate_utf8_finish(result);
@@ -391,9 +433,9 @@ class CodeburnIndicator extends PanelMenu.Button {
         const current = payload?.current ?? {};
         const cost = Number(current.cost ?? 0);
 
-        this._label.set_text(formatCost(cost, this._currency));
+        this._label.set_text(formatCost(cost, this._currency, this._fxRate));
         this._heroLabel.set_text(current.label || '');
-        this._heroAmount.set_text(formatCost(cost, this._currency));
+        this._heroAmount.set_text(formatCost(cost, this._currency, this._fxRate));
 
         const calls = Number(current.calls ?? 0);
         const sessions = Number(current.sessions ?? 0);
@@ -429,7 +471,7 @@ class CodeburnIndicator extends PanelMenu.Button {
             x_expand: true,
         });
         const cost = new St.Label({
-            text: formatCost(activity.cost, this._currency),
+            text: formatCost(activity.cost, this._currency, this._fxRate),
             style_class: 'codeburn-activity-cost',
         });
         const turns = new St.Label({
@@ -448,14 +490,13 @@ class CodeburnIndicator extends PanelMenu.Button {
         }
         row.add_child(topLine);
 
-        // Bar chart: track + filled portion. Width is proportional to this activity's
-        // share of the top cost. St widgets let us just set widths in pixels.
-        const track = new St.Widget({style_class: 'codeburn-bar-track', y_expand: false});
+        // Bar chart: proportional to this activity's share of the top cost. The
+        // track is a BoxLayout so the fill child lays out horizontally instead of
+        // stretching to fill the parent (which made every bar look 100%).
+        const track = new St.BoxLayout({style_class: 'codeburn-bar-track'});
         const filledPct = Math.max(0.02, Math.min(1, Number(activity.cost) / maxCost));
-        const fill = new St.Widget({
-            style_class: 'codeburn-bar-fill',
-            width: Math.round(240 * filledPct),
-        });
+        const fill = new St.Widget({style_class: 'codeburn-bar-fill'});
+        fill.set_width(Math.round(240 * filledPct));
         track.add_child(fill);
         row.add_child(track);
 
@@ -470,7 +511,7 @@ class CodeburnIndicator extends PanelMenu.Button {
         }
         const savings = Number(optimize?.savingsUSD ?? 0);
         this._findingsCount.set_text(`⚠  ${count} optimize findings`);
-        this._findingsSavings.set_text(`save ~${formatCost(savings, this._currency)}`);
+        this._findingsSavings.set_text(`save ~${formatCost(savings, this._currency, this._fxRate)}`);
         this._findingsBtn.show();
     }
 
@@ -517,8 +558,8 @@ class CodeburnIndicator extends PanelMenu.Button {
     }
 });
 
-function formatCost(value, currency) {
-    const n = Number(value) || 0;
+function formatCost(value, currency, rate = 1) {
+    const n = (Number(value) || 0) * (Number(rate) || 1);
     const abs = Math.abs(n);
     const symbol = currency?.symbol || '$';
     if (abs >= 1000) {
